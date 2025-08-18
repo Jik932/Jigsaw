@@ -1,6 +1,6 @@
 self.addEventListener('install', e => {
   e.waitUntil(caches.open('jigsaw-cache-v1').then(c => c.addAll([
-    './','./index.html','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png'
+    './','./index.html','./manifest.webmanifest','./icon-192.png','./icon-512.png'
   ])));
 });
 self.addEventListener('fetch', e => {
