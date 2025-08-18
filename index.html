@@ -100,4 +100,167 @@
     canvas.height = boardH;
 
     if (pieces.length && prevW && prevH && (prevW !== boardW || prevH !== boardH)){
-      const sx = boardW / prevW, sy = boar
+      const sx = boardW / prevW, sy = boardH / prevH;
+      for (const p of pieces){ p.x *= sx; p.y *= sy; }
+    }
+
+    cellW = boardW / cols;
+    cellH = boardH / rows;
+  }
+
+  // ---------- Jigsaw randen ----------
+  function edgePath(p, x1, y1, x2, y2, tab, orient){
+    // tab: 0 = vlak, +1 = nok (uit), -1 = gat (in)
+    if (tab === 0){ p.lineTo(x2, y2); return; }
+    const len = (orient === 'h') ? (x2 - x1) : (y2 - y1);
+    const r = Math.min(cellW, cellH) * 0.22; // radius knop
+
+    if (orient === 'h'){                // links -> rechts
+      const cx = x1 + len/2;
+      const cy = y1 - tab * r;
+      p.lineTo(cx - r, y1);
+      p.arc(cx, cy, r, Math.PI, 0, tab > 0);   // halve cirkel
+      p.lineTo(x2, y2);
+    } else {                            // top -> bottom
+      const cy = y1 + len/2;
+      const cx = x1 - tab * r;
+      p.lineTo(x1, cy - r);
+      p.arc(cx, cy, r, -Math.PI/2, Math.PI/2, tab < 0);
+      p.lineTo(x2, y2);
+    }
+  }
+
+  function buildPiecePaths(){
+    const all = [];
+    for (let r=0; r<rows; r++){
+      for (let c=0; c<cols; c++){
+        const top    = (r===0) ? 0 : -all[(r-1)*cols + c].bottom;
+        const left   = (c===0) ? 0 : -all[r*cols + (c-1)].right;
+        const right  = (c===cols-1) ? 0 : rndTab();
+        const bottom = (r===rows-1) ? 0 : rndTab();
+        all.push({top, right, bottom, left});
+      }
+    }
+    for (let r=0; r<rows; r++){
+      for (let c=0; c<cols; c++){
+        const p = new Path2D();
+        const x = c*cellW,   y = r*cellH;
+        const e = all[r*cols + c];
+
+        p.moveTo(x, y);
+        edgePath(p, x, y, x+cellW, y, e.top, 'h');                // top
+        edgePath(p, x+cellW, y, x+cellW, y+cellH, e.right, 'v');  // right
+        edgePath(p, x+cellW, y+cellH, x, y+cellH, -e.bottom, 'h');// bottom
+        edgePath(p, x, y+cellH, x, y, -e.left, 'v');              // left
+        p.closePath(); // vorm sluiten
+
+        const piece = pieces[r*cols + c] || {};
+        piece.r=r; piece.c=c; piece.path = p;
+        if (piece.x==null){ piece.x = Math.random()*(boardW - cellW); piece.y = Math.random()*(boardH - cellH); }
+        pieces[r*cols + c] = piece;
+      }
+    }
+  }
+
+  // ---------- Tekenen & interactie ----------
+  function draw(){
+    ctx.clearRect(0,0,boardW,boardH);
+    if (showPeek){ ctx.globalAlpha = 0.15; ctx.drawImage(img,0,0,boardW,boardH); ctx.globalAlpha=1; }
+
+    for (const p of pieces){
+      const sx = p.c * (img.naturalWidth/cols);
+      const sy = p.r * (img.naturalHeight/rows);
+      const sw = img.naturalWidth/cols;
+      const sh = img.naturalHeight/rows;
+      const dx = p.x - p.c*cellW;
+      const dy = p.y - p.r*cellH;
+
+      ctx.save();
+      ctx.translate(dx, dy);
+      ctx.clip(p.path);
+      ctx.drawImage(img, sx, sy, sw, sh, p.c*cellW, p.r*cellH, cellW, cellH);
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 1;
+      ctx.stroke(p.path);
+      ctx.restore();
+    }
+  }
+
+  function isSolved(){
+    const snap = Math.max(6, Math.round(Math.min(cellW, cellH)*0.02));
+    return pieces.every(p => Math.abs(p.x - p.c*cellW) < snap && Math.abs(p.y - p.r*cellH) < snap);
+  }
+
+  function pickPiece(pt){
+    for (let i=pieces.length-1; i>=0; i--){
+      const p = pieces[i];
+      const dx = p.x - p.c*cellW;
+      const dy = p.y - p.r*cellH;
+
+      ctx.save();
+      ctx.translate(dx, dy);
+      const hit = ctx.isPointInPath(p.path, pt.x, pt.y);
+      ctx.restore();
+
+      if (hit){ pieces.splice(i,1); pieces.push(p); return p; }
+    }
+    return null;
+  }
+
+  function getPoint(evt){
+    const rect = canvas.getBoundingClientRect();
+    const x = (('touches' in evt && evt.touches[0]) ? evt.touches[0].clientX : evt.clientX) - rect.left;
+    const y = (('touches' in evt && evt.touches[0]) ? evt.touches[0].clientY : evt.clientY) - rect.top;
+    return { x: x * (boardW/rect.width), y: y * (boardH/rect.height) };
+  }
+  function snapToGrid(p){ p.x = Math.round(p.x / cellW)*cellW; p.y = Math.round(p.y / cellH)*cellH; }
+  function onDown(e){ if(!img.src) return; e.preventDefault(); const pt=getPoint(e); dragging=pickPiece(pt); if(dragging) offset={x:pt.x-dragging.x,y:pt.y-dragging.y}; }
+  function onMove(e){ if(!dragging) return; e.preventDefault(); const pt=getPoint(e);
+    dragging.x = clamp(pt.x - offset.x, 0, boardW - cellW);
+    dragging.y = clamp(pt.y - offset.y, 0, boardH - cellH);
+    draw();
+  }
+  function onUp(e){ if(!dragging) return; e.preventDefault(); snapToGrid(dragging); dragging=null; draw(); if(isSolved()) doneEl.style.display='block'; }
+
+  canvas.addEventListener('mousedown', onDown);
+  canvas.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+  canvas.addEventListener('touchstart', onDown, {passive:false});
+  canvas.addEventListener('touchmove', onMove, {passive:false});
+  canvas.addEventListener('touchend', onUp, {passive:false});
+
+  // bij resizen: alles her-schaleren en randen opnieuw opbouwen
+  window.addEventListener('resize', () => {
+    if (!img.src) return;
+    fitCanvasToImage();
+    buildPiecePaths();
+    draw();
+  });
+
+  // ---------- Load / shuffle ----------
+  function newBoard(maxPieces){
+    const g = chooseGrid(Math.min(600, Math.max(12, maxPieces|0)), img.naturalWidth, img.naturalHeight);
+    rows = g.rows; cols = g.cols;
+    fitCanvasToImage();
+    pieces = [];
+    buildPiecePaths();
+    doneEl.style.display='none';
+    draw();
+  }
+  function loadFile(file){
+    const url = URL.createObjectURL(file);
+    img.onload = () => newBoard(parseInt(piecesInput.value,10) || 120);
+    img.src = url;
+  }
+
+  fileInput.addEventListener('change', e => { const [f] = e.target.files; if (f) loadFile(f); });
+  piecesInput.addEventListener('change', () => { if (img.src) newBoard(parseInt(piecesInput.value,10)||120); });
+  shuffleBtn.addEventListener('click', () => { if (img.src) newBoard(parseInt(piecesInput.value,10)||120); });
+  peekBtn.addEventListener('click', () => { showPeek=!showPeek; peekBtn.textContent = showPeek? 'Verberg voorbeeld':'Voorbeeld'; draw(); });
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js'));
+  }
+  </script>
+</body>
+</html>
