@@ -130,15 +130,42 @@
     }
   }
 
-  function buildPiecePaths(){
-    const all = [];
-    for (let r=0; r<rows; r++){
-      for (let c=0; c<cols; c++){
-        const top    = (r===0) ? 0 : -all[(r-1)*cols + c].bottom;
-        const left   = (c===0) ? 0 : -all[r*cols + (c-1)].right;
-        const right  = (c===cols-1) ? 0 : rndTab();
-        const bottom = (r===rows-1) ? 0 : rndTab();
-        all.push({top, right, bottom, left});
+ function buildPiecePaths(){
+  // 1) bepaal voor elk vakje of er een nok/gat zit
+  const all = [];
+  for (let r=0; r<rows; r++){
+    for (let c=0; c<cols; c++){
+      const top    = (r===0)      ? 0 : -all[(r-1)*cols + c].bottom;
+      const left   = (c===0)      ? 0 : -all[r*cols + (c-1)].right;
+      const right  = (c===cols-1) ? 0 : rndTab();
+      const bottom = (r===rows-1) ? 0 : rndTab();
+      all.push({ top, right, bottom, left });
+    }
+  }
+
+  // 2) bouw per stukje een PAD in lokale coördinaten (0..cellW, 0..cellH)
+  for (let r=0; r<rows; r++){
+    for (let c=0; c<cols; c++){
+      const e = all[r*cols + c];
+      const p = new Path2D();
+
+      p.moveTo(0, 0);
+      edgePath(p, 0, 0, cellW, 0, e.top, 'h');                 // bovenrand
+      edgePath(p, cellW, 0, cellW, cellH, e.right, 'v');       // rechterrand
+      edgePath(p, cellW, cellH, 0, cellH, -e.bottom, 'h');     // onderrand
+      edgePath(p, 0, cellH, 0, 0, -e.left, 'v');               // linkerrand
+      p.closePath();
+
+      const piece = pieces[r*cols + c] || {};
+      piece.r = r; piece.c = c; piece.path = p;
+
+      if (piece.x == null) piece.x = Math.random() * (boardW - cellW);
+      if (piece.y == null) piece.y = Math.random() * (boardH - cellH);
+
+      pieces[r*cols + c] = piece;
+    
+  }
+}
       }
     }
     for (let r=0; r<rows; r++){
@@ -158,31 +185,39 @@
         piece.r=r; piece.c=c; piece.path = p;
         if (piece.x==null){ piece.x = Math.random()*(boardW - cellW); piece.y = Math.random()*(boardH - cellH); }
         pieces[r*cols + c] = piece;
-      }
+    
     }
   }
 
   // ---------- Tekenen & interactie ----------
   function draw(){
-    ctx.clearRect(0,0,boardW,boardH);
-    if (showPeek){ ctx.globalAlpha = 0.15; ctx.drawImage(img,0,0,boardW,boardH); ctx.globalAlpha=1; }
+  ctx.clearRect(0,0,boardW,boardH);
+  if (showPeek){ ctx.globalAlpha = 0.15; ctx.drawImage(img,0,0,boardW,boardH); ctx.globalAlpha=1; }
 
-    for (const p of pieces){
-      const sx = p.c * (img.naturalWidth/cols);
-      const sy = p.r * (img.naturalHeight/rows);
-      const sw = img.naturalWidth/cols;
-      const sh = img.naturalHeight/rows;
-      const dx = p.x - p.c*cellW;
-      const dy = p.y - p.r*cellH;
+  for (const p of pieces){
+    const sx = p.c * (img.naturalWidth  / cols);
+    const sy = p.r * (img.naturalHeight / rows);
+    const sw = img.naturalWidth  / cols;
+    const sh = img.naturalHeight / rows;
 
-      ctx.save();
-      ctx.translate(dx, dy);
-      ctx.clip(p.path);
-      ctx.drawImage(img, sx, sy, sw, sh, p.c*cellW, p.r*cellH, cellW, cellH);
-      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-      ctx.lineWidth = 1;
-      ctx.stroke(p.path);
-      ctx.restore();
+    // Teken elk stukje op (p.x, p.y) met lokale vorm (0..cellW,0..cellH)
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.beginPath();
+    ctx.clip(p.path);                               // clippen op puzzelvorm
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cellW, cellH);
+    ctx.restore();
+
+    // Outline
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1;
+    ctx.stroke(p.path);
+    ctx.restore();
+  }
+}
     }
   }
 
