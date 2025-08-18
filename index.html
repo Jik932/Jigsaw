@@ -36,13 +36,195 @@
     <div id="done" class="success">🎉 Klaar! Nog een ronde?</div>
   </main>
 <script>
+// ---------- DOM ----------
 const fileInput = document.getElementById('file');
-const gridSel = document.getElementById('grid');
+const piecesInput = document.getElementById('pieces');
 const shuffleBtn = document.getElementById('shuffle');
 const peekBtn = document.getElementById('peek');
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
 const doneEl = document.getElementById('done');
+
+// ---------- State ----------
+let img = new Image();
+let rows = 6, cols = 6;
+let cellW = 0, cellH = 0;
+let pieces = [];    // {r,c,x,y,path}
+let dragging = null;
+let offset = {x:0,y:0};
+let showPeek = false;
+let boardW = 0, boardH = 0;
+
+// ---------- Utils ----------
+function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+function rndTab(){ return Math.random() < 0.5 ? -1 : 1; } // -1 in, +1 uit
+
+function chooseGrid(maxPieces, w, h){
+  const target = w / h;
+  let best = {r:3, c:4, score: 1e9, pcs: 12};
+  const rMax = Math.max(2, Math.ceil(Math.sqrt(maxPieces)));
+  for (let r=2; r<=rMax*2; r++){
+    let c = Math.floor(maxPieces / r);
+    if (c < 2) continue;
+    const pcs = r*c;
+    if (pcs > maxPieces) continue;
+    const aspect = c/r;
+    const score = Math.abs(aspect - target) + (maxPieces - pcs)/maxPieces;
+    if (score < best.score) best = {r, c, score, pcs};
+  }
+  return {rows: best.r, cols: best.c};
+}
+
+function fitCanvasToImage(){
+  const pad = 24;
+  const maxW = Math.min(1000, window.innerWidth - pad);
+  const maxH = Math.min(1000, window.innerHeight - 220);
+  const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
+  boardW = Math.round(img.naturalWidth * scale);
+  boardH = Math.round(img.naturalHeight * scale);
+  const prevW = canvas.width || boardW, prevH = canvas.height || boardH;
+  canvas.width = boardW; canvas.height = boardH;
+
+  if (pieces.length && (prevW !== boardW || prevH !== boardH)){
+    const sx = boardW / prevW, sy = boardH / prevH;
+    for (const p of pieces){ p.x *= sx; p.y *= sy; }
+  }
+  cellW = boardW / cols; cellH = boardH / rows;
+}
+
+// ---------- Jigsaw randen ----------
+function edgePath(p, x1, y1, x2, y2, tab, orient){
+  if (tab === 0){ p.lineTo(x2, y2); return; }
+  const len = orient === 'h' ? (x2 - x1) : (y2 - y1);
+  const t = Math.min(cellW, cellH) * 0.25 * tab; // diepte van nok
+  if (orient === 'h'){
+    const mid = x1 + len/2;
+    p.lineTo(x1 + len*0.35, y1);
+    p.bezierCurveTo(x1 + len*0.40, y1, mid - len*0.05, y1 + t*0.3, mid, y1 + t);
+    p.bezierCurveTo(mid + len*0.05, y1 + t*0.7, x1 + len*0.60, y1, x1 + len*0.65, y1);
+    p.lineTo(x2, y2);
+  } else {
+    const mid = y1 + len/2;
+    p.lineTo(x1, y1 + len*0.35);
+    p.bezierCurveTo(x1, y1 + len*0.40, x1 + t*0.3, mid - len*0.05, x1 + t, mid);
+    p.bezierCurveTo(x1 + t*0.7, mid + len*0.05, x1, y1 + len*0.60, x1, y1 + len*0.65);
+    p.lineTo(x2, y2);
+  }
+}
+
+function buildPiecePaths(){
+  const all = [];
+  for (let r=0; r<rows; r++){
+    for (let c=0; c<cols; c++){
+      const top    = (r===0) ? 0 : -all[(r-1)*cols + c].bottom;
+      const left   = (c===0) ? 0 : -all[r*cols + (c-1)].right;
+      const right  = (c===cols-1) ? 0 : rndTab();
+      const bottom = (r===rows-1) ? 0 : rndTab();
+      all.push({top, right, bottom, left});
+    }
+  }
+  for (let r=0; r<rows; r++){
+    for (let c=0; c<cols; c++){
+      const p = new Path2D();
+      const x = c*cellW,   y = r*cellH;
+      const e = all[r*cols + c];
+
+      p.moveTo(x, y);
+      edgePath(p, x, y, x+cellW, y, e.top, 'h');                // top
+      edgePath(p, x+cellW, y, x+cellW, y+cellH, e.right, 'v');  // right
+      edgePath(p, x+cellW, y+cellH, x, y+cellH, -e.bottom, 'h');// bottom
+      edgePath(p, x, y+cellH, x, y, -e.left, 'v');              // left
+
+      const piece = pieces[r*cols + c] || {};
+      piece.r=r; piece.c=c; piece.path = p;
+      if (piece.x==null){ piece.x = Math.random()*(boardW - cellW); piece.y = Math.random()*(boardH - cellH); }
+      pieces[r*cols + c] = piece;
+    }
+  }
+}
+
+// ---------- Tekenen & interactie ----------
+function draw(){
+  ctx.clearRect(0,0,boardW,boardH);
+  if (showPeek){ ctx.globalAlpha = 0.15; ctx.drawImage(img,0,0,boardW,boardH); ctx.globalAlpha=1; }
+
+  for (const p of pieces){
+    const sx = p.c * (img.naturalWidth/cols);
+    const sy = p.r * (img.naturalHeight/rows);
+    ctx.save();
+    const translated = new Path2D();
+    translated.addPath(p.path, new DOMMatrix().translate(p.x - p.c*cellW, p.y - p.r*cellH));
+    ctx.clip(translated);
+    ctx.drawImage(img, sx, sy, img.naturalWidth/cols, img.naturalHeight/rows, p.x, p.y, cellW, cellH);
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1; ctx.stroke(translated);
+  }
+}
+
+function isSolved(){
+  const snap = Math.max(6, Math.round(Math.min(cellW, cellH)*0.02));
+  return pieces.every(p => Math.abs(p.x - p.c*cellW) < snap && Math.abs(p.y - p.r*cellH) < snap);
+}
+
+function pickPiece(pt){
+  for (let i=pieces.length-1; i>=0; i--){
+    const p = pieces[i];
+    const translated = new Path2D();
+    translated.addPath(p.path, new DOMMatrix().translate(p.x - p.c*cellW, p.y - p.r*cellH));
+    if (ctx.isPointInPath(translated, pt.x, pt.y)){
+      pieces.splice(i,1); pieces.push(p);
+      return p;
+    }
+  }
+  return null;
+}
+
+function getPoint(evt){
+  const rect = canvas.getBoundingClientRect();
+  const x = (('touches' in evt && evt.touches[0]) ? evt.touches[0].clientX : evt.clientX) - rect.left;
+  const y = (('touches' in evt && evt.touches[0]) ? evt.touches[0].clientY : evt.clientY) - rect.top;
+  return { x: x * (boardW/rect.width), y: y * (boardH/rect.height) };
+}
+function snapToGrid(p){ p.x = Math.round(p.x / cellW)*cellW; p.y = Math.round(p.y / cellH)*cellH; }
+function onDown(e){ if(!img.src) return; e.preventDefault(); const pt=getPoint(e); dragging=pickPiece(pt); if(dragging) offset={x:pt.x-dragging.x,y:pt.y-dragging.y}; }
+function onMove(e){ if(!dragging) return; e.preventDefault(); const pt=getPoint(e);
+  dragging.x = clamp(pt.x - offset.x, 0, boardW - cellW);
+  dragging.y = clamp(pt.y - offset.y, 0, boardH - cellH);
+  draw();
+}
+function onUp(e){ if(!dragging) return; e.preventDefault(); snapToGrid(dragging); dragging=null; draw(); if(isSolved()) doneEl.style.display='block'; }
+
+canvas.addEventListener('mousedown', onDown);
+canvas.addEventListener('mousemove', onMove);
+window.addEventListener('mouseup', onUp);
+canvas.addEventListener('touchstart', onDown, {passive:false});
+canvas.addEventListener('touchmove', onMove, {passive:false});
+canvas.addEventListener('touchend', onUp, {passive:false});
+window.addEventListener('resize', () => { fitCanvasToImage(); draw(); });
+
+// ---------- Load / shuffle ----------
+function newBoard(maxPieces){
+  const g = chooseGrid(Math.min(600, Math.max(12, maxPieces|0)), img.naturalWidth, img.naturalHeight);
+  rows = g.rows; cols = g.cols;
+  fitCanvasToImage();
+  pieces = [];
+  buildPiecePaths();
+  doneEl.style.display='none';
+  draw();
+}
+function loadFile(file){
+  const url = URL.createObjectURL(file);
+  img.onload = () => newBoard(parseInt(piecesInput.value,10) || 120);
+  img.src = url;
+}
+
+fileInput.addEventListener('change', e => { const [f] = e.target.files; if (f) loadFile(f); });
+piecesInput.addEventListener('change', () => { if (img.src) newBoard(parseInt(piecesInput.value,10)||120); });
+shuffleBtn.addEventListener('click', () => { if (img.src) newBoard(parseInt(piecesInput.value,10)||120); });
+peekBtn.addEventListener('click', () => { showPeek=!showPeek; peekBtn.textContent = showPeek? 'Verberg voorbeeld':'Voorbeeld'; draw(); });
+
+if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js')); }
+</script>
 
 let img = new Image();
 let rows = 6, cols = 6;
