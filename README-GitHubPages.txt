@@ -1,0 +1,1 @@
+Upload alle bestanden in deze map naar de root van je GitHub-repo en zet Pages aan (main / root).
