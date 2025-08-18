@@ -97,20 +97,70 @@ function fitCanvasToImage(){
 }
 
 // ronde nok/inkeping langs een rand
-function edgePath(ctx, x1,y1, x2,y2, tab, orient){
-  if(tab===0){ ctx.lineTo(x2,y2); return; }
-  const len = (orient==='h') ? (x2-x1) : (y2-y1);
-  const r = Math.min(cellW, cellH) * 0.22;
+}
+  function edgePath(ctx, x1, y1, x2, y2, tab, orient){
+  // tab: 0 = vlak, +1 = nok (uit), -1 = gat (in)
+  if (tab === 0){ ctx.lineTo(x2, y2); return; }
 
-  if(orient==='h'){            // links -> rechts
-    const cx = x1 + len/2, cy = y1 - tab*r;
-    ctx.lineTo(cx - r, y1);
-    ctx.arc(cx, cy, r, Math.PI, 0, tab>0);   // halve cirkel
+  // Vormparameters (pas desgewenst aan)
+  const s    = Math.min(cellW, cellH);
+  const neck = s * 0.12;   // breedte/hoogte van de hals
+  const r    = s * 0.20;   // radius van de bol
+
+  if (orient === 'h') {
+    // horizontale rand: links -> rechts langs y = y1
+    const mid = (x1 + x2) / 2;
+    const cy  = y1 - tab * (neck + r);   // middelpunt van de bol
+
+    // 1) naar begin van de hals
+    ctx.lineTo(mid - (r + neck), y1);
+
+    // 2) hals (vloeiend naar buiten)
+    ctx.bezierCurveTo(
+      mid - (r + neck * 0.5), y1,
+      mid - (r + neck * 0.2), y1 - tab * (neck * 0.5),
+      mid - r,                y1 - tab * neck
+    );
+
+    // 3) bol (halve cirkel)
+    ctx.arc(mid, cy, r, Math.PI, 0, tab > 0);
+
+    // 4) hals terug naar rand
+    ctx.bezierCurveTo(
+      mid + (r + neck * 0.2), y1 - tab * (neck * 0.5),
+      mid + (r + neck * 0.5), y1,
+      mid + (r + neck),       y1
+    );
+
+    // 5) verder naar hoekpunt
     ctx.lineTo(x2, y2);
-  }else{                       // top -> bottom
-    const cy = y1 + len/2, cx = x1 - tab*r;
-    ctx.lineTo(x1, cy - r);
-    ctx.arc(cx, cy, r, -Math.PI/2, Math.PI/2, tab<0);
+
+  } else {
+    // verticale rand: top -> bottom langs x = x1
+    const mid = (y1 + y2) / 2;
+    const cx  = x1 - tab * (neck + r);
+
+    // 1) naar begin van de hals
+    ctx.lineTo(x1, mid - (r + neck));
+
+    // 2) hals (vloeiend naar buiten)
+    ctx.bezierCurveTo(
+      x1,                     mid - (r + neck * 0.5),
+      x1 - tab * (neck * 0.5),mid - (r + neck * 0.2),
+      x1 - tab * neck,        mid - r
+    );
+
+    // 3) bol (halve cirkel)
+    ctx.arc(cx, mid, r, -Math.PI/2, Math.PI/2, tab < 0);
+
+    // 4) hals terug naar rand
+    ctx.bezierCurveTo(
+      x1 - tab * (neck * 0.5),mid + (r + neck * 0.2),
+      x1,                     mid + (r + neck * 0.5),
+      x1,                     mid + (r + neck)
+    );
+
+    // 5) verder naar hoekpunt
     ctx.lineTo(x2, y2);
   }
 }
