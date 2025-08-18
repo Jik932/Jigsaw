@@ -14,8 +14,8 @@
     header h1 { font-size: 18px; margin: 0; }
     main { padding: 12px; display: grid; gap: 12px; }
     .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    button, input[type="file"], select { padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; background: #fff; font-size: 14px; }
-    canvas { width: 100%; max-width: 840px; background: #fff; border: 1px solid #ddd; border-radius: 8px; touch-action: none; }
+    button, input[type="file"], input[type="number"] { padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; background: #fff; font-size: 14px; }
+    canvas { width: 100%; max-width: 1000px; background: #fff; border: 1px solid #ddd; border-radius: 8px; touch-action: none; }
     .hint { font-size: 12px; color: #666; }
     .success { padding: 10px; background: #eaffea; border: 1px solid #c7efc7; color: #206020; border-radius: 8px; display: none; }
   </style>
@@ -23,274 +23,81 @@
 <body>
   <header><img src="icon-192.png" width="28" height="28" alt="" style="border-radius:6px"/><h1>🧩 Jigsaw (PWA)</h1></header>
   <main>
-   <section class="bar">
-  <input id="file" type="file" accept="image/*">
-  <label>Aantal stukjes (max 600):
-    <input id="pieces" type="number" min="12" max="600" step="6" value="120" style="width:90px">
-  </label>
-  <button id="shuffle">Schud & start</button>
-  <button id="peek">Voorbeeld</button>
-  <span class="hint">Zet op beginscherm voor app-gevoel • Werkt offline</span>
-</section>
+    <section class="bar">
+      <input id="file" type="file" accept="image/*">
+      <label>Aantal stukjes (max 600):
+        <input id="pieces" type="number" min="12" max="600" step="6" value="120" style="width:90px">
+      </label>
+      <button id="shuffle">Schud & start</button>
+      <button id="peek">Voorbeeld</button>
+      <span class="hint">Zet op beginscherm voor app-gevoel • Werkt offline</span>
+    </section>
     <canvas id="board" width="900" height="900" aria-label="puzzelbord"></canvas>
     <div id="done" class="success">🎉 Klaar! Nog een ronde?</div>
   </main>
-<script>
-// ---------- DOM ----------
-const fileInput = document.getElementById('file');
-const piecesInput = document.getElementById('pieces');
-const shuffleBtn = document.getElementById('shuffle');
-const peekBtn = document.getElementById('peek');
-const canvas = document.getElementById('board');
-const ctx = canvas.getContext('2d', { willReadFrequently: true });
-const doneEl = document.getElementById('done');
 
-// ---------- State ----------
-let img = new Image();
-let rows = 6, cols = 6;
-let cellW = 0, cellH = 0;
-let pieces = [];    // {r,c,x,y,path}
-let dragging = null;
-let offset = {x:0,y:0};
-let showPeek = false;
-let boardW = 0, boardH = 0;
+  <script>
+  // ---------- DOM ----------
+  const fileInput = document.getElementById('file');
+  const piecesInput = document.getElementById('pieces');
+  const shuffleBtn = document.getElementById('shuffle');
+  const peekBtn = document.getElementById('peek');
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const doneEl = document.getElementById('done');
 
-// ---------- Utils ----------
-function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
-function rndTab(){ return Math.random() < 0.5 ? -1 : 1; } // -1 in, +1 uit
+  // ---------- State ----------
+  let img = new Image();
+  let rows = 6, cols = 6;
+  let cellW = 0, cellH = 0;
+  let pieces = [];    // {r,c,x,y,path}
+  let dragging = null;
+  let offset = {x:0,y:0};
+  let showPeek = false;
+  let boardW = 0, boardH = 0;
 
-function chooseGrid(maxPieces, w, h){
-  const target = w / h;
-  let best = {r:3, c:4, score: 1e9, pcs: 12};
-  const rMax = Math.max(2, Math.ceil(Math.sqrt(maxPieces)));
-  for (let r=2; r<=rMax*2; r++){
-    let c = Math.floor(maxPieces / r);
-    if (c < 2) continue;
-    const pcs = r*c;
-    if (pcs > maxPieces) continue;
-    const aspect = c/r;
-    const score = Math.abs(aspect - target) + (maxPieces - pcs)/maxPieces;
-    if (score < best.score) best = {r, c, score, pcs};
-  }
-  return {rows: best.r, cols: best.c};
-}
+  // ---------- Utils ----------
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+  function rndTab(){ return Math.random() < 0.5 ? -1 : 1; } // -1 in, +1 uit
 
-function fitCanvasToImage(){
-  const pad = 24;
-  const maxW = Math.min(1000, window.innerWidth - pad);
-  const maxH = Math.min(1000, window.innerHeight - 220);
-  const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
-  boardW = Math.round(img.naturalWidth * scale);
-  boardH = Math.round(img.naturalHeight * scale);
-  const prevW = canvas.width || boardW, prevH = canvas.height || boardH;
-  canvas.width = boardW; canvas.height = boardH;
-
-  if (pieces.length && (prevW !== boardW || prevH !== boardH)){
-    const sx = boardW / prevW, sy = boardH / prevH;
-    for (const p of pieces){ p.x *= sx; p.y *= sy; }
-  }
-  cellW = boardW / cols; cellH = boardH / rows;
-}
-
-// ---------- Jigsaw randen ----------
-function edgePath(p, x1, y1, x2, y2, tab, orient){
-  // tab: 0 = vlak, +1 = nok (uit), -1 = gat (in)
-  if (tab === 0){ p.lineTo(x2, y2); return; }
-  const len = (orient === 'h') ? (x2 - x1) : (y2 - y1);
-  const r = Math.min(cellW, cellH) * 0.22; // radius van de “knop”
-
-  if (orient === 'h'){
-    const cx = x1 + len/2;          // midden van de rand
-    const cy = y1 - tab * r;        // naar boven (tab=+1) of naar beneden (tab=-1)
-    p.lineTo(cx - r, y1);           // tot begin van boog
-    // halve cirkel van links naar rechts
-    p.arc(cx, cy, r, 3*Math.PI/4, Math.PI/4, false);
-    p.lineTo(x2, y2);
-  } else { // verticale rand, top -> bottom
-    const cy = y1 + len/2;
-    const cx = x1 - tab * r;        // naar links (tab=+1) of rechts (tab=-1)
-    p.lineTo(x1, cy - r);
-    // halve cirkel van boven naar onder
-    p.arc(cx, cy, r, -Math.PI/4, Math.PI/4, true);
-    p.lineTo(x2, y2);
-  }
-}
-
-function buildPiecePaths(){
-  const all = [];
-  for (let r=0; r<rows; r++){
-    for (let c=0; c<cols; c++){
-      const top    = (r===0) ? 0 : -all[(r-1)*cols + c].bottom;
-      const left   = (c===0) ? 0 : -all[r*cols + (c-1)].right;
-      const right  = (c===cols-1) ? 0 : rndTab();
-      const bottom = (r===rows-1) ? 0 : rndTab();
-      all.push({top, right, bottom, left});
+  function chooseGrid(maxPieces, w, h){
+    const target = w / h;
+    let best = {r:3, c:4, score: 1e9, pcs: 12};
+    const rMax = Math.max(2, Math.ceil(Math.sqrt(maxPieces)));
+    for (let r=2; r<=rMax*2; r++){
+      let c = Math.floor(maxPieces / r);
+      if (c < 2) continue;
+      const pcs = r*c;
+      if (pcs > maxPieces) continue;
+      const aspect = c/r;
+      const score = Math.abs(aspect - target) + (maxPieces - pcs)/maxPieces;
+      if (score < best.score) best = {r, c, score, pcs};
     }
+    return {rows: best.r, cols: best.c};
   }
-  for (let r=0; r<rows; r++){
-    for (let c=0; c<cols; c++){
-      const p = new Path2D();
-      const x = c*cellW,   y = r*cellH;
-      const e = all[r*cols + c];
 
-      p.moveTo(x, y);
-      edgePath(p, x, y, x+cellW, y, e.top, 'h');                // top
-      edgePath(p, x+cellW, y, x+cellW, y+cellH, e.right, 'v');  // right
-      edgePath(p, x+cellW, y+cellH, x, y+cellH, -e.bottom, 'h');// bottom
-      edgePath(p, x, y+cellH, x, y, -e.left, 'v');              // left
-      p.closePath(); // <— belangrijk: sluit de puzzelvorm
+  // ---------- Automatisch schalen naar scherm ----------
+  function fitCanvasToImage(){
+    const pad = 24;
 
-      const piece = pieces[r*cols + c] || {};
-      piece.r=r; piece.c=c; piece.path = p;
-      if (piece.x==null){ piece.x = Math.random()*(boardW - cellW); piece.y = Math.random()*(boardH - cellH); }
-      pieces[r*cols + c] = piece;
-    }
-  }
-}
+    // beschikbare ruimte
+    const container = canvas.parentElement;
+    const rect = container
+      ? container.getBoundingClientRect()
+      : { width: window.innerWidth - pad, height: window.innerHeight - 200 };
 
-// ---------- Tekenen & interactie ----------
-function draw(){
-  ctx.clearRect(0,0,boardW,boardH);
-  if (showPeek){ ctx.globalAlpha = 0.15; ctx.drawImage(img,0,0,boardW,boardH); ctx.globalAlpha=1; }
+    const maxW = Math.max(320, Math.floor(rect.width - pad));
+    const maxH = Math.max(320, Math.floor(rect.height - 140)); // ruimte voor toolbar
 
-  for (const p of pieces){
-    const sx = p.c * (img.naturalWidth/cols);
-    const sy = p.r * (img.naturalHeight/rows);
-    const sw = img.naturalWidth/cols;
-    const sh = img.naturalHeight/rows;
-    const dx = p.x - p.c*cellW;
-    const dy = p.y - p.r*cellH;
+    const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
 
-    // Vertaal canvas, clip op puzzelvorm, teken deel van afbeelding
-    ctx.save();
-    ctx.translate(dx, dy);
-    ctx.clip(p.path);
-    ctx.drawImage(img, sx, sy, sw, sh, p.c*cellW, p.r*cellH, cellW, cellH);
-    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-    ctx.lineWidth = 1;
-    ctx.stroke(p.path);   // outline
-    ctx.restore();
-  }
-}
+    const prevW = canvas.width || 0;
+    const prevH = canvas.height || 0;
 
-function isSolved(){
-  const snap = Math.max(6, Math.round(Math.min(cellW, cellH)*0.02));
-  return pieces.every(p => Math.abs(p.x - p.c*cellW) < snap && Math.abs(p.y - p.r*cellH) < snap);
-}
+    boardW = Math.round(img.naturalWidth * scale);
+    boardH = Math.round(img.naturalHeight * scale);
+    canvas.width = boardW;
+    canvas.height = boardH;
 
-function pickPiece(pt){
-  // Van boven naar beneden getekend, dus van achter naar voren testen
-  for (let i=pieces.length-1; i>=0; i--){
-    const p = pieces[i];
-    const dx = p.x - p.c*cellW;
-    const dy = p.y - p.r*cellH;
-
-    ctx.save();
-    ctx.translate(dx, dy);
-    const hit = ctx.isPointInPath(p.path, pt.x, pt.y);
-    ctx.restore();
-
-    if (hit){
-      pieces.splice(i,1); pieces.push(p); // naar boven halen
-      return p;
-    }
-  }
-  return null;
-}
-  }
-  return null;
-}
-
-function getPoint(evt){
-  const rect = canvas.getBoundingClientRect();
-  const x = (('touches' in evt && evt.touches[0]) ? evt.touches[0].clientX : evt.clientX) - rect.left;
-  const y = (('touches' in evt && evt.touches[0]) ? evt.touches[0].clientY : evt.clientY) - rect.top;
-  return { x: x * (boardW/rect.width), y: y * (boardH/rect.height) };
-}
-function snapToGrid(p){ p.x = Math.round(p.x / cellW)*cellW; p.y = Math.round(p.y / cellH)*cellH; }
-function onDown(e){ if(!img.src) return; e.preventDefault(); const pt=getPoint(e); dragging=pickPiece(pt); if(dragging) offset={x:pt.x-dragging.x,y:pt.y-dragging.y}; }
-function onMove(e){ if(!dragging) return; e.preventDefault(); const pt=getPoint(e);
-  dragging.x = clamp(pt.x - offset.x, 0, boardW - cellW);
-  dragging.y = clamp(pt.y - offset.y, 0, boardH - cellH);
-  draw();
-}
-function onUp(e){ if(!dragging) return; e.preventDefault(); snapToGrid(dragging); dragging=null; draw(); if(isSolved()) doneEl.style.display='block'; }
-
-canvas.addEventListener('mousedown', onDown);
-canvas.addEventListener('mousemove', onMove);
-window.addEventListener('mouseup', onUp);
-canvas.addEventListener('touchstart', onDown, {passive:false});
-canvas.addEventListener('touchmove', onMove, {passive:false});
-canvas.addEventListener('touchend', onUp, {passive:false});
-window.addEventListener('resize', () => { fitCanvasToImage(); draw(); });
-
-// ---------- Load / shuffle ----------
-function newBoard(maxPieces){
-  const g = chooseGrid(Math.min(600, Math.max(12, maxPieces|0)), img.naturalWidth, img.naturalHeight);
-  rows = g.rows; cols = g.cols;
-  fitCanvasToImage();
-  pieces = [];
-  buildPiecePaths();
-  doneEl.style.display='none';
-  draw();
-}
-function loadFile(file){
-  const url = URL.createObjectURL(file);
-  img.onload = () => newBoard(parseInt(piecesInput.value,10) || 120);
-  img.src = url;
-}
-
-fileInput.addEventListener('change', e => { const [f] = e.target.files; if (f) loadFile(f); });
-piecesInput.addEventListener('change', () => { if (img.src) newBoard(parseInt(piecesInput.value,10)||120); });
-shuffleBtn.addEventListener('click', () => { if (img.src) newBoard(parseInt(piecesInput.value,10)||120); });
-peekBtn.addEventListener('click', () => { showPeek=!showPeek; peekBtn.textContent = showPeek? 'Verberg voorbeeld':'Voorbeeld'; draw(); });
-
-if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js')); }
-</script>
-
-let img = new Image();
-let rows = 6, cols = 6;
-let cellW = 0, cellH = 0;
-let pieces = [];
-let dragging = null;
-let offset = {x:0,y:0};
-let showPeek = false;
-
-function fitCanvasToImage() {
-  const max = 900;
-  let w = img.naturalWidth, h = img.naturalHeight;
-  const scale = Math.min(max / w, max / h, 1);
-  w = Math.round(w * scale); h = Math.round(h * scale);
-  canvas.width = w; canvas.height = h;
-  cellW = w / cols; cellH = h / rows;
-}
-function makePieces(){ pieces=[]; for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) pieces.push({r,c,x:Math.random()*(canvas.width-cellW),y:Math.random()*(canvas.height-cellH)}); }
-function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  if (showPeek) { ctx.globalAlpha=0.15; ctx.drawImage(img,0,0,canvas.width,canvas.height); ctx.globalAlpha=1; }
-  for (const p of pieces) {
-    const sx = p.c * (img.naturalWidth/cols);
-    const sy = p.r * (img.naturalHeight/rows);
-    ctx.drawImage(img, sx, sy, img.naturalWidth/cols, img.naturalHeight/rows, p.x, p.y, cellW, cellH);
-    ctx.strokeStyle = 'rgba(0,0,0,0.08)'; ctx.strokeRect(p.x,p.y,cellW,cellH);
-  }
-}
-function isSolved(){ const s=6; return pieces.every(p=>Math.abs(p.x-p.c*cellW)<s && Math.abs(p.y-p.r*cellH)<s); }
-function shuffle(){ makePieces(); draw(); doneEl.style.display='none'; }
-function loadFile(file){ const url = URL.createObjectURL(file); img.onload=()=>{ rows=cols=parseInt(gridSel.value,10); fitCanvasToImage(); shuffle(); draw(); }; img.src=url; }
-fileInput.addEventListener('change', e=>{ const [file]=e.target.files; if(file) loadFile(file); });
-gridSel.addEventListener('change', ()=>{ if(img.src){ rows=cols=parseInt(gridSel.value,10); fitCanvasToImage(); shuffle(); draw(); }});
-shuffleBtn.addEventListener('click', ()=>{ if(img.src) shuffle(); });
-peekBtn.addEventListener('click', ()=>{ showPeek=!showPeek; peekBtn.textContent=showPeek?'Verberg voorbeeld':'Voorbeeld'; draw(); });
-function getPoint(evt){ const r=canvas.getBoundingClientRect(); if(evt.touches&&evt.touches[0]) return {x:(evt.touches[0].clientX-r.left)*(canvas.width/r.width), y:(evt.touches[0].clientY-r.top)*(canvas.height/r.height)}; return {x:(evt.clientX-r.left)*(canvas.width/r.width), y:(evt.clientY-r.top)*(canvas.height/r.height)}; }
-function pickPiece(pt){ for(let i=pieces.length-1;i>=0;i--){ const p=pieces[i]; if(pt.x>=p.x&&pt.x<=p.x+cellW&&pt.y>=p.y&&pt.y<=p.y+cellH){ pieces.splice(i,1); pieces.push(p); return p; } } return null; }
-function snapToGrid(p){ p.x=Math.round(p.x/cellW)*cellW; p.y=Math.round(p.y/cellH)*cellH; }
-function onDown(e){ if(!img.src) return; e.preventDefault(); const pt=getPoint(e); dragging=pickPiece(pt); if(dragging) offset={x:pt.x-dragging.x,y:pt.y-dragging.y}; }
-function onMove(e){ if(!dragging) return; e.preventDefault(); const pt=getPoint(e); dragging.x=Math.max(0,Math.min(canvas.width-cellW,pt.x-offset.x)); dragging.y=Math.max(0,Math.min(canvas.height-cellH,pt.y-offset.y)); draw(); }
-function onUp(e){ if(!dragging) return; e.preventDefault(); snapToGrid(dragging); dragging=null; draw(); if(isSolved()) doneEl.style.display='block'; }
-canvas.addEventListener('mousedown', onDown); canvas.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
-canvas.addEventListener('touchstart', onDown, {passive:false}); canvas.addEventListener('touchmove', onMove, {passive:false}); canvas.addEventListener('touchend', onUp, {passive:false});
-if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js')); }
-</script>
-</body>
-</html>
+    if (pieces.length && prevW && prevH && (prevW !== boardW || prevH !== boardH)){
+      const sx = boardW / prevW, sy = boar
