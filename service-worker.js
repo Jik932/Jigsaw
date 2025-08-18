@@ -1,7 +1,7 @@
 self.addEventListener('install', e => {
   self.skipWaiting(); // neem meteen over
   e.waitUntil(
-    caches.open('jigsaw-cache-v8').then(c => c.addAll([
+    caches.open('jigsaw-cache-v10').then(c => c.addAll([
       './',
       './index.html',
       './manifest.webmanifest',
