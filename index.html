@@ -138,6 +138,7 @@ function buildPiecePaths(){
       edgePath(p, x+cellW, y, x+cellW, y+cellH, e.right, 'v');  // right
       edgePath(p, x+cellW, y+cellH, x, y+cellH, -e.bottom, 'h');// bottom
       edgePath(p, x, y+cellH, x, y, -e.left, 'v');              // left
+      p.closePath(); // <— belangrijk: sluit de puzzelvorm
 
       const piece = pieces[r*cols + c] || {};
       piece.r=r; piece.c=c; piece.path = p;
