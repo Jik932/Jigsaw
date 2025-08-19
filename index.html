@@ -37,28 +37,34 @@
   </main>
 
 <script>
-// ---------- DOM ----------
-const fileInput = document.getElementById('file');
+// ===== DOM =====
+const fileInput   = document.getElementById('file');
 const piecesInput = document.getElementById('pieces');
-const shuffleBtn = document.getElementById('shuffle');
-const peekBtn = document.getElementById('peek');
-const canvas = document.getElementById('board');
-const ctx = canvas.getContext('2d', { willReadFrequently: true });
-const doneEl = document.getElementById('done');
+const shuffleBtn  = document.getElementById('shuffle');
+const peekBtn     = document.getElementById('peek');
+const canvas      = document.getElementById('board');
+const ctx         = canvas.getContext('2d', { willReadFrequently: true });
+const doneEl      = document.getElementById('done');
 
-// ---------- State ----------
+// ===== State =====
 let img = new Image();
 let rows = 6, cols = 6;
-let cellW = 0, cellH = 0;
-let boardW = 0, boardH = 0;
+let cellW = 0, cellH = 0, boardW = 0, boardH = 0;
 let pieces = [];  // {r,c,x,y,edges:{top,right,bottom,left}}
-let dragging = null;
-let offset = {x:0,y:0};
+let dragging = null, offset = {x:0,y:0};
 let showPeek = false;
 
-// ---------- Helpers ----------
+// ===== Helpers =====
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const rndTab = ()=>Math.random()<0.5?-1:1;  // -1 gat, +1 nok
+
+// klassieke stijl + variatie
+const STYLE = {
+  neckRatio: 0.12,   // hals t.o.v. celmaat
+  bulbRatio: 0.18,   // bol t.o.v. celmaat
+  offsetMax: 0.25,   // max middenverschuiving vs. midden (als fractie van rand-lengte)
+  sizeJitter: 0.18   // ± variatie in maat (0.18 = ±18%)
+};
 
 function chooseGrid(maxPieces, w, h){
   const target = w/h;
@@ -96,27 +102,26 @@ function fitCanvasToImage(){
   cellW = boardW/cols; cellH = boardH/rows;
 }
 
-// ronde nok/inkeping langs een rand
-}
- function edgePath(ctx, x1, y1, x2, y2, tab, orient){
-  // tab: 0 = vlak, +1 = nok (uit), -1 = gat (in)
-  if (tab === 0){ ctx.lineTo(x2, y2); return; }
+// rand met hals + bol (alleen Bézier-curves → stabiel in Safari)
+function edgePath(ctx, x1, y1, x2, y2, edge, orient){
+  const tab = edge.tab;              // -1 gat, +1 nok, 0 vlak
+  if(tab===0){ ctx.lineTo(x2,y2); return; }
 
-  // Robuuste, klassieke vorm (smalle hals + bol) zonder Path2D-gevoeligheid
-  const S = Math.min(cellW, cellH);
-  const neck = S * 0.12;   // breedte hals
-  const bulb = S * 0.18;   // “bol”-grootte (geen arc, wel rond via Béziers)
+  const S    = Math.min(cellW, cellH);
+  const size = 1 + (edge.sizeJitter || 0);            // bv. ±0.18
+  const neck = S * STYLE.neckRatio * size;
+  const bulb = S * STYLE.bulbRatio * size;
 
-  if (orient === 'h') {
-    // horizontaal: links -> rechts langs y = y1
-    const mid = (x1 + x2) / 2;
+  if(orient==='h'){ // links -> rechts langs y1
+    const len = x2 - x1;
+    const mid = x1 + len * (0.5 + (edge.offset||0)*STYLE.offsetMax);
     const out = y1 - tab * (neck + bulb);
 
-    ctx.lineTo(mid - (bulb + neck), y1);            // naar hals
+    ctx.lineTo(mid - (bulb + neck), y1);
     ctx.bezierCurveTo(
       mid - (bulb + neck*0.5), y1,
       mid - (bulb*0.6),        y1 - tab*neck*0.6,
-      mid,                     out                   // top van de bol
+      mid,                     out
     );
     ctx.bezierCurveTo(
       mid + (bulb*0.6),        y1 - tab*neck*0.6,
@@ -125,39 +130,49 @@ function fitCanvasToImage(){
     );
     ctx.lineTo(x2, y2);
 
-  } else {
-    // verticaal: top -> bottom langs x = x1
-    const mid = (y1 + y2) / 2;
+  } else {         // top -> bottom langs x1
+    const len = y2 - y1;
+    const mid = y1 + len * (0.5 + (edge.offset||0)*STYLE.offsetMax);
     const out = x1 - tab * (neck + bulb);
 
     ctx.lineTo(x1, mid - (bulb + neck));
     ctx.bezierCurveTo(
-      x1,                     mid - (bulb + neck*0.5),
-      x1 - tab*neck*0.6,      mid - bulb*0.6,
-      out,                    mid
+      x1,                  mid - (bulb + neck*0.5),
+      x1 - tab*neck*0.6,   mid - bulb*0.6,
+      out,                 mid
     );
     ctx.bezierCurveTo(
-      x1 - tab*neck*0.6,      mid + bulb*0.6,
-      x1,                     mid + (bulb + neck*0.5),
-      x1,                     mid + (bulb + neck)
+      x1 - tab*neck*0.6,   mid + bulb*0.6,
+      x1,                  mid + (bulb + neck*0.5),
+      x1,                  mid + (bulb + neck)
     );
     ctx.lineTo(x2, y2);
   }
 }
-// edges genereren + pieces opbouwen
+
+function randEdge(){             // willekeurige rand met variatie
+  return {
+    tab: rndTab(),
+    offset: (Math.random()*2-1),              // -1..1 (we schalen met STYLE.offsetMax)
+    sizeJitter: (Math.random()*2-1)*STYLE.sizeJitter // bv. ±0.18
+  };
+}
+
 function buildPieces(){
-  // edges per cel
+  // 1) maak complementaire randen
   const edges=[];
   for(let r=0;r<rows;r++){
     for(let c=0;c<cols;c++){
-      const top    = (r===0)      ? 0 : -edges[(r-1)*cols+c].bottom;
-      const left   = (c===0)      ? 0 : -edges[r*cols + (c-1)].right;
-      const right  = (c===cols-1) ? 0 : rndTab();
-      const bottom = (r===rows-1) ? 0 : rndTab();
-      edges.push({top,right,bottom,left});
+      const idx = r*cols + c;
+      const top    = (r===0)      ? {tab:0} : (()=>{ const e = {...edges[(r-1)*cols+c].bottom}; e.tab*=-1; return e; })();
+      const left   = (c===0)      ? {tab:0} : (()=>{ const e = {...edges[r*cols+(c-1)].right};  e.tab*=-1; return e; })();
+      const right  = (c===cols-1) ? {tab:0} : randEdge();
+      const bottom = (r===rows-1) ? {tab:0} : randEdge();
+      edges[idx] = { top, right, bottom, left };
     }
   }
 
+  // 2) init stukken
   pieces=[];
   for(let r=0;r<rows;r++){
     for(let c=0;c<cols;c++){
@@ -172,12 +187,12 @@ function buildPieces(){
 }
 
 function drawPiecePath(ctx,p){
-  const e=p.edges;
-  ctx.moveTo(0,0);
-  edgePath(ctx,0,0,cellW,0,e.top,'h');
-  edgePath(ctx,cellW,0,cellW,cellH,e.right,'v');
-  edgePath(ctx,cellW,cellH,0,cellH,-e.bottom,'h');
-  edgePath(ctx,0,cellH,0,0,-e.left,'v');
+  const x = 0, y = 0;
+  ctx.moveTo(x,y);
+  edgePath(ctx, x, y, x+cellW, y,         p.edges.top,    'h'); // boven
+  edgePath(ctx, x+cellW, y, x+cellW, y+cellH, p.edges.right,  'v'); // rechts
+  edgePath(ctx, x+cellW, y+cellH, x, y+cellH, p.edges.bottom, 'h'); // onder
+  edgePath(ctx, x, y+cellH, x, y,         p.edges.left,   'v'); // links
   ctx.closePath();
 }
 
@@ -190,14 +205,12 @@ function draw(){
     const sy=p.r*(img.naturalHeight/rows);
     const sw=img.naturalWidth/cols, sh=img.naturalHeight/rows;
 
-    // masker + stukje
     ctx.save();
     ctx.translate(p.x,p.y);
     ctx.beginPath(); drawPiecePath(ctx,p); ctx.clip();
     ctx.drawImage(img, sx,sy,sw,sh, 0,0, cellW,cellH);
     ctx.restore();
 
-    // outline
     ctx.save();
     ctx.translate(p.x,p.y);
     ctx.beginPath(); drawPiecePath(ctx,p);
@@ -243,9 +256,9 @@ canvas.addEventListener('touchstart', onDown, {passive:false});
 canvas.addEventListener('touchmove', onMove, {passive:false});
 canvas.addEventListener('touchend', onUp, {passive:false});
 
-window.addEventListener('resize', ()=>{ if(!img.src) return; fitCanvasToImage(); /* posities schalen gebeurt in fit */ draw(); });
+window.addEventListener('resize', ()=>{ if(!img.src) return; fitCanvasToImage(); draw(); });
 
-// ---------- Load / shuffle ----------
+// ===== Load / shuffle =====
 function newBoard(maxPieces){
   const g=chooseGrid(Math.min(600,Math.max(12,maxPieces|0)), img.naturalWidth,img.naturalHeight);
   rows=g.rows; cols=g.cols;
