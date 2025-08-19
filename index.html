@@ -104,47 +104,59 @@ function fitCanvasToImage(){
 
 // rand met hals + bol (alleen Bézier-curves → stabiel in Safari)
 function edgePath(ctx, x1, y1, x2, y2, edge, orient){
-  const tab = edge.tab;              // -1 gat, +1 nok, 0 vlak
-  if(tab===0){ ctx.lineTo(x2,y2); return; }
+  // Klassieke puzzel: smalle hals + ronde bol
+  // edge.tab: 0 = vlak, +1 = nok (uit), -1 = gat (in)
+  const tab = edge.tab;
+  if (tab === 0) { ctx.lineTo(x2, y2); return; }
 
-  const S    = Math.min(cellW, cellH);
-  const size = 1 + (edge.sizeJitter || 0);            // bv. ±0.18
-  const neck = S * STYLE.neckRatio * size;
-  const bulb = S * STYLE.bulbRatio * size;
+  // Verhoudingen (iets ‘puzzelachtiger’ dan eerst)
+  const S = Math.min(cellW, cellH);
+  const size = 1 + (edge.sizeJitter || 0);       // bv. ±0.10
+  const neck = S * 0.10 * size;                  // 10% hals
+  const r    = S * 0.24 * size;                  // 24% bol-radius
+  const off  = Math.max(-1, Math.min(1, edge.offset || 0)) * 0.20; // max 20% verschuiving
 
-  if(orient==='h'){ // links -> rechts langs y1
+  if (orient === 'h') {
+    // horizontale rand: links -> rechts langs y1
     const len = x2 - x1;
-    const mid = x1 + len * (0.5 + (edge.offset||0)*STYLE.offsetMax);
-    const out = y1 - tab * (neck + bulb);
+    const mid = x1 + len * (0.5 + off);
+    const cy  = y1 - tab * (neck + r);
 
-    ctx.lineTo(mid - (bulb + neck), y1);
+    // naar begin hals
+    ctx.lineTo(mid - (r + neck), y1);
+    // hals (zacht naar buiten)
     ctx.bezierCurveTo(
-      mid - (bulb + neck*0.5), y1,
-      mid - (bulb*0.6),        y1 - tab*neck*0.6,
-      mid,                     out
+      mid - (r + neck*0.5), y1,
+      mid - r,              y1 - tab*(neck*0.6),
+      mid - r,              y1 - tab*neck
     );
+    // bol (halve cirkel)
+    ctx.arc(mid, cy, r, Math.PI, 0, tab > 0);
+    // hals terug naar rand
     ctx.bezierCurveTo(
-      mid + (bulb*0.6),        y1 - tab*neck*0.6,
-      mid + (bulb + neck*0.5), y1,
-      mid + (bulb + neck),     y1
+      mid + r,              y1 - tab*(neck*0.6),
+      mid + (r + neck*0.5), y1,
+      mid + (r + neck),     y1
     );
     ctx.lineTo(x2, y2);
 
-  } else {         // top -> bottom langs x1
+  } else {
+    // verticale rand: top -> bottom langs x1
     const len = y2 - y1;
-    const mid = y1 + len * (0.5 + (edge.offset||0)*STYLE.offsetMax);
-    const out = x1 - tab * (neck + bulb);
+    const mid = y1 + len * (0.5 + off);
+    const cx  = x1 - tab * (neck + r);
 
-    ctx.lineTo(x1, mid - (bulb + neck));
+    ctx.lineTo(x1, mid - (r + neck));
     ctx.bezierCurveTo(
-      x1,                  mid - (bulb + neck*0.5),
-      x1 - tab*neck*0.6,   mid - bulb*0.6,
-      out,                 mid
+      x1,              mid - (r + neck*0.5),
+      x1 - tab*(neck*0.6), mid - r,
+      x1 - tab*neck,       mid - r
     );
+    ctx.arc(cx, mid, r, -Math.PI/2, Math.PI/2, tab < 0);
     ctx.bezierCurveTo(
-      x1 - tab*neck*0.6,   mid + bulb*0.6,
-      x1,                  mid + (bulb + neck*0.5),
-      x1,                  mid + (bulb + neck)
+      x1 - tab*(neck*0.6), mid + r,
+      x1,                  mid + (r + neck*0.5),
+      x1,                  mid + (r + neck)
     );
     ctx.lineTo(x2, y2);
   }
