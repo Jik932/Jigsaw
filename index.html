@@ -65,7 +65,7 @@ let img = new Image();
 let rows = 6, cols = 6;
 let cellW = 0, cellH = 0, boardW = 0, boardH = 0;
 let pieces = [];           // ← blijft bewust globaal (handig voor debug)
-  window.piecesRef = () => pieces;
+  globalThis.piecesRef = () => pieces;
 let dragging = null;
 let offset = {x:0,y:0};
 let showPeek = false;
