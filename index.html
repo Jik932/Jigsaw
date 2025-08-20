@@ -108,7 +108,10 @@ function edgePath(ctx, x1, y1, x2, y2, edge, orient){
   // edge.tab: 0 = vlak, +1 = nok (uit), -1 = gat (in)
   const tab = edge.tab;
   if (tab === 0) { ctx.lineTo(x2, y2); return; }
-
+  
+if (typeof piecePath !== 'function' && typeof drawPiecePath === 'function') {
+  window.piecePath = (ctx, r, c, edges) => drawPiecePath(ctx, { r, c, edges });
+}
   // Verhoudingen (iets ‘puzzelachtiger’ dan eerst)
   const S = Math.min(cellW, cellH);
   const size = 1 + (edge.sizeJitter || 0);       // bv. ±0.10
