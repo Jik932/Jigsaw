@@ -198,13 +198,14 @@ function buildPieces(){
   }
 }
 
-function PiecePath(ctx,p){
+// VERVANGT drawPiecePath: zelfde vorm, maar heet 'piecePath' en gebruikt 'edges'
+function piecePath(ctx, r, c, edges){
   const x = 0, y = 0;
-  ctx.moveTo(x,y);
-  edgePath(ctx, x, y, x+cellW, y,         p.edges.top,    'h'); // boven
-  edgePath(ctx, x+cellW, y, x+cellW, y+cellH, p.edges.right,  'v'); // rechts
-  edgePath(ctx, x+cellW, y+cellH, x, y+cellH, p.edges.bottom, 'h'); // onder
-  edgePath(ctx, x, y+cellH, x, y,         p.edges.left,   'v'); // links
+  ctx.moveTo(x, y);
+  edgePath(ctx, x,       y,        x+cellW, y,         edges.top,    'h'); // boven
+  edgePath(ctx, x+cellW, y,        x+cellW, y+cellH,   edges.right,  'v'); // rechts
+  edgePath(ctx, x+cellW, y+cellH,  x,       y+cellH,   edges.bottom, 'h'); // onder
+  edgePath(ctx, x,       y+cellH,  x,       y,         edges.left,   'v'); // links
   ctx.closePath();
 }
 
