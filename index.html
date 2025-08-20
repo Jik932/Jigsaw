@@ -212,7 +212,6 @@ function piecePath(ctx, r, c, edges){
 function draw(){
   ctx.clearRect(0, 0, boardW, boardH);
 
-  // optioneel voorbeeld doorheen de puzzel
   if (showPeek) {
     ctx.globalAlpha = 0.15;
     ctx.drawImage(img, 0, 0, boardW, boardH);
@@ -228,14 +227,31 @@ function draw(){
     ctx.save();
     ctx.translate(p.x, p.y);
 
+    // 1) Omtrek tekenen zodat je ALTIJD iets ziet
     ctx.beginPath();
-    piecePath(ctx, p.r, p.c, p.edges);   // <<< NIEUW: gebruik piecePath
+    if (typeof piecePath === 'function') {
+      piecePath(ctx, p.r, p.c, p.edges);
+    } else if (typeof drawPiecePath === 'function') {
+      drawPiecePath(ctx, p); // noodgreep
+    }
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // 2) Clip + image binnen het stuk
+    ctx.beginPath();
+    if (typeof piecePath === 'function') {
+      piecePath(ctx, p.r, p.c, p.edges);
+    } else if (typeof drawPiecePath === 'function') {
+      drawPiecePath(ctx, p);
+    }
     ctx.clip();
 
     ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cellW, cellH);
 
     ctx.restore();
   }
+}
 }
   }
 }
