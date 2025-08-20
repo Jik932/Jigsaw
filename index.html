@@ -219,25 +219,29 @@ function draw(){
   ctx.clearRect(0,0,boardW,boardH);
   if (showPeek) { ctx.globalAlpha=0.15; ctx.drawImage(img,0,0,boardW,boardH); ctx.globalAlpha=1; }
 
-  for (const p of pieces) {
-    const sx = p.c * (img.naturalWidth / cols);
-    const sy = p.r * (img.naturalHeight / rows);
-    const sw = img.naturalWidth / cols;
-    const sh = img.naturalHeight / rows;
+ // Bron-uitsnede voor dit stuk
+const sx = p.c * (img.naturalWidth  / cols);
+const sy = p.r * (img.naturalHeight / rows);
+const sw = img.naturalWidth  / cols;
+const sh = img.naturalHeight / rows;
 
-    // inhoud
-    ctx.save();
-    ctx.translate(p.x, p.y);
-    ctx.beginPath(); drawPiecePath(ctx,p); ctx.clip();
-    ctx.drawImage(img, sx,sy,sw,sh, 0,0, cellW,cellH);
-    ctx.restore();
+// 1) Teken het stukje als vierkantje op zijn plek
+ctx.save();
+ctx.translate(p.x, p.y);
+ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cellW, cellH);
 
-    // lijn
-    ctx.save();
-    ctx.translate(p.x, p.y);
-    ctx.beginPath(); drawPiecePath(ctx,p);
-    ctx.strokeStyle='rgba(0,0,0,0.25)'; ctx.lineWidth=1; ctx.stroke();
-    ctx.restore();
+// 2) Masker het vierkant naar puzzelvorm (werkt in alle browsers)
+ctx.globalCompositeOperation = 'destination-in';
+ctx.beginPath();
+drawPiecePath(ctx, p);   // of piecePath(ctx, p) als jij die gebruikt
+ctx.fill();
+
+// 3) Terug naar normaal tekenen en dun lijntje erover
+ctx.globalCompositeOperation = 'source-over';
+ctx.lineWidth = 1;
+ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+ctx.stroke();
+ctx.restore();
   }
 }
 
