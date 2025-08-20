@@ -1,5 +1,5 @@
 // Bump dit versienummer bij elke release
-const CACHE = 'jigsaw-cache-v19';
+const CACHE = 'jigsaw-cache-v22';
 
 self.addEventListener('install', e => {
   self.skipWaiting(); // neem meteen over
