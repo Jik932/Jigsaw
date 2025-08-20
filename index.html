@@ -218,8 +218,19 @@ function makeEdgesAndPieces(){
 
   }<script>
 // ... laat alles boven draw() staan zoals het is
-
-function draw(){
+// ---- Adapter: kies de beschikbare vormfunctie en maak de signatuur gelijk ----
+const outline = (function () {
+  // variant 1: drawPiecePath(ctx, p)
+  if (typeof drawPiecePath === 'function') {
+    return (ctx, p) => drawPiecePath(ctx, p);
+  }
+  // variant 2: piecePath(ctx, r, c, edges)
+  if (typeof piecePath === 'function') {
+    return (ctx, p) => piecePath(ctx, p.r, p.c, p.edges);
+  }
+  return null; // geen vormfunctie gevonden => dan tekenen we vierkantjes
+})();
+function draw() {
   ctx.clearRect(0, 0, boardW, boardH);
 
   if (showPeek) {
@@ -228,39 +239,39 @@ function draw(){
     ctx.globalAlpha = 1;
   }
 
-  // Gebruik welke outline-functie er beschikbaar is
-  const outline =
-    (typeof drawPiecePath === 'function') ? drawPiecePath :
-    (typeof piecePath     === 'function') ? piecePath     :
-    null;
-
   for (const p of pieces) {
     // bron-uitsnede uit de foto
-    const sx = p.c * (img.naturalWidth  / cols);
+    const sx = p.c * (img.naturalWidth / cols);
     const sy = p.r * (img.naturalHeight / rows);
-    const sw =        (img.naturalWidth  / cols);
-    const sh =        (img.naturalHeight / rows);
+    const sw = (img.naturalWidth / cols);
+    const sh = (img.naturalHeight / rows);
 
     ctx.save();
     ctx.translate(p.x, p.y);
 
-    // 1) eerst het vierkantje van dit segment tekenen
+    // 1) het rechthoekige segment plaatsen
     ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cellW, cellH);
 
     if (outline) {
-      // 2) het vierkantje naar puzzelvorm maskeren
+      // 2) segment maskeren naar puzzelvorm
       ctx.globalCompositeOperation = 'destination-in';
       ctx.beginPath();
       outline(ctx, p);
       ctx.fill();
 
-      // 3) dun lijntje over de rand
+      // 3) randje tekenen
       ctx.globalCompositeOperation = 'source-over';
       ctx.lineWidth = 1;
       ctx.strokeStyle = 'rgba(0,0,0,0.25)';
       ctx.beginPath();
       outline(ctx, p);
       ctx.stroke();
+    }
+    // Als outline == null, blijven het keurige vierkantjes (geen crash)
+
+    ctx.restore();
+  }
+}
     }
 
     ctx.restore();
