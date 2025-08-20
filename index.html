@@ -210,25 +210,33 @@ function piecePath(ctx, r, c, edges){
 }
 
 function draw(){
-  ctx.clearRect(0,0,boardW,boardH);
-  if(showPeek){ ctx.globalAlpha=0.15; ctx.drawImage(img,0,0,boardW,boardH); ctx.globalAlpha=1; }
+  ctx.clearRect(0, 0, boardW, boardH);
 
-  for(const p of pieces){
-    const sx=p.c*(img.naturalWidth/cols);
-    const sy=p.r*(img.naturalHeight/rows);
-    const sw=img.naturalWidth/cols, sh=img.naturalHeight/rows;
+  // optioneel voorbeeld doorheen de puzzel
+  if (showPeek) {
+    ctx.globalAlpha = 0.15;
+    ctx.drawImage(img, 0, 0, boardW, boardH);
+    ctx.globalAlpha = 1;
+  }
+
+  for (const p of pieces) {
+    const sx = p.c * (img.naturalWidth / cols);
+    const sy = p.r * (img.naturalHeight / rows);
+    const sw = img.naturalWidth  / cols;
+    const sh = img.naturalHeight / rows;
 
     ctx.save();
-    ctx.translate(p.x,p.y);
-    ctx.beginPath(); drawPiecePath(ctx,p); ctx.clip();
-    ctx.drawImage(img, sx,sy,sw,sh, 0,0, cellW,cellH);
-    ctx.restore();
+    ctx.translate(p.x, p.y);
 
-    ctx.save();
-    ctx.translate(p.x,p.y);
-    ctx.beginPath(); drawPiecePath(ctx,p);
-    ctx.strokeStyle='rgba(0,0,0,0.25)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.beginPath();
+    piecePath(ctx, p.r, p.c, p.edges);   // <<< NIEUW: gebruik piecePath
+    ctx.clip();
+
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cellW, cellH);
+
     ctx.restore();
+  }
+}
   }
 }
 
@@ -240,11 +248,7 @@ function isSolved(){
 function pickPiece(pt){
   for(let i=pieces.length-1;i>=0;i--){
     const p=pieces[i];
-    ctx.save();
-    ctx.translate(p.x,p.y);
-    ctx.beginPath(); drawPiecePath(ctx,p);
-    const hit = ctx.isPointInPath(pt.x,pt.y);
-    ctx.restore();
+   
     if(hit){ pieces.splice(i,1); pieces.push(p); return p; }
   }
   return null;
