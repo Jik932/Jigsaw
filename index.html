@@ -200,16 +200,70 @@ function buildPieces(){
     }
   }
 }
-
-// VERVANGT drawPiecePath: zelfde vorm, maar heet 'piecePath' en gebruikt 'edges'
-function piecePath(ctx, r, c, edges){
+function drawPiecePath(ctx, p){
   const x = 0, y = 0;
-  ctx.moveTo(x, y);
-  edgePath(ctx, x,       y,        x+cellW, y,         edges.top,    'h'); // boven
-  edgePath(ctx, x+cellW, y,        x+cellW, y+cellH,   edges.right,  'v'); // rechts
-  edgePath(ctx, x+cellW, y+cellH,  x,       y+cellH,   edges.bottom, 'h'); // onder
-  edgePath(ctx, x,       y+cellH,  x,       y,         edges.left,   'v'); // links
+
+  // 1 rand tekenen: helper roept edgePath (maakt hals + bol)
+  function oneEdge(edge, orient){
+    edgePath(ctx, x, y, x + (orient === 'h' ? cellW : 0), y + (orient === 'v' ? cellH : 0), edge, orient);
+  }
+
+  // Boven, rechts, onder, links (gebruikt p.edges.*)
+  oneEdge(p.edges.top,    'h');           // boven
+  oneEdge(p.edges.right,  'v');           // rechts
+  oneEdge(p.edges.bottom, 'h');           // onder
+  oneEdge(p.edges.left,   'v');           // links
+
   ctx.closePath();
+}
+// Rand met hals + bol (stabiel in Safari)
+function edgePath(ctx, x1, y1, x2, y2, edge, orient){
+  const tab = edge.tab;      // 0 = vlak, +1 = nok (uit), -1 = gat (in)
+  if (tab === 0) { ctx.lineTo(x2, y2); return; }
+
+  // verhoudingen (klassieke puzzel)
+  const S    = Math.min(cellW, cellH);
+  const size = 1 + (edge.sizeJitter || 0);   // bv. ±0.10
+  const neck = S * 0.10 * size;              // hals
+  const r    = S * 0.24 * size;              // bol-radius
+  const off  = Math.max(-1, Math.min(1, edge.offset || 0)) * 0.20; // max 20% verschuiving
+
+  // horizontaal vs verticaal
+  const hor = (orient === 'h');
+  const len = hor ? cellW : cellH;
+  const dx  = hor ? 1 : 0;
+  const dy  = hor ? 0 : 1;
+
+  // start → hals
+  const mid = hor ? (x1 + x2)/2 : (y1 + y2)/2;
+  const cx  = hor ? mid + off*len : x1;
+  const cy  = hor ? y1 : mid + off*len;
+
+  // naar halve hals
+  const xh1 = (hor ? cx - neck : x1);
+  const yh1 = (hor ? y1 : cy - neck);
+  ctx.bezierCurveTo(
+    x1 + dx*neck, y1 + dy*neck,
+    xh1,          yh1,
+    xh1,          yh1
+  );
+
+  // bol (halve cirkel buiten of binnen)
+  const tabSign = tab > 0 ? 1 : -1;
+  const bx = hor ? cx : cx + tabSign*r;
+  const by = hor ? cy + tabSign*r : cy;
+  const start = hor ? (tab > 0 ? Math.PI : 0) : (tab > 0 ? Math.PI/2 : -Math.PI/2);
+  const end   = start + Math.PI;
+  ctx.arc(bx, by, r, start, end);
+
+  // terug via tweede hals
+  const xh2 = (hor ? cx + neck : x2);
+  const yh2 = (hor ? y2 : cy + neck);
+  ctx.bezierCurveTo(
+    xh2,          yh2,
+    x2 - dx*neck, y2 - dy*neck,
+    x2,           y2
+  );
 }
 
 function draw(){
